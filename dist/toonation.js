@@ -9,15 +9,14 @@ export const ToonConfigOpt = {
 // wss://toon.at:8071/eyJhdXRoIjoiOTE3.....
 export class Toon extends WebSocketConnection {
     ping() {
-        console.log('sendping');
-        this.send('2');
+        this.send('#ping');
     }
     isPong(data) {
-        console.log('isping???', data.toString());
-        return data.toString() === '3';
+        return data.toString() === '#pong';
     }
     onMessage(data) {
         const msg = data.toString();
+        logger.trace({ msg }, 'message received');
         try {
             const obj = JSON.parse(msg);
             if (obj.content && obj.content.amount) {

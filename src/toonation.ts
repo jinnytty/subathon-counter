@@ -21,17 +21,16 @@ export const ToonConfigOpt: ArgumentConfig<ToonConfig> = {
 
 export class Toon extends WebSocketConnection<DonationMessage> {
   protected ping(): void {
-    console.log('sendping');
-    this.send('2');
+    this.send('#ping');
   }
 
   protected isPong(data: WebSocket.Data): boolean {
-    console.log('isping???', data.toString());
-    return data.toString() === '3';
+    return data.toString() === '#pong';
   }
 
   protected onMessage(data: WebSocket.Data): DonationMessage | null {
     const msg = data.toString();
+    logger.trace({ msg }, 'message received');
     try {
       const obj = JSON.parse(msg);
       if (obj.content && obj.content.amount) {
