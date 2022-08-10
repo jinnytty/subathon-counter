@@ -14,7 +14,7 @@ export class WebSocketConnection {
         this.ws = null;
         this.pingInt = null;
         this.pingTimeout = null;
-        this.pingIntervalLength = 1000 * 30;
+        this.pingIntervalLength = 1000 * 3;
         this.listeners = [];
         this.openResolve = undefined;
         this.openReject = undefined;

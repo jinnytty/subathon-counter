@@ -21,7 +21,7 @@ export abstract class WebSocketConnection<IMessage> {
   protected ws: WebSocket | null = null;
   private pingInt: NodeJS.Timeout | null = null;
   private pingTimeout: NodeJS.Timer | null = null;
-  protected pingIntervalLength: number = 1000 * 30;
+  protected pingIntervalLength: number = 1000 * 3;
 
   private listeners: MessageListener<IMessage>[] = [];
 
