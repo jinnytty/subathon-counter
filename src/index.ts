@@ -1,5 +1,10 @@
 import { ArgumentConfig, parse } from 'ts-command-line-args';
 import type { DonationCallback, DonationMessage } from './model.js';
+import {
+  Streamlabs,
+  StreamlabsConfig,
+  StreamlabsConfigOpt,
+} from './streamlabs.js';
 import { Toon, ToonConfig, ToonConfigOpt } from './toonation.js';
 import { Twip, TwipConfig, TwipConfigOpt } from './twip.js';
 
@@ -11,12 +16,17 @@ const CounterConfigOpt: ArgumentConfig<CounterConfig> = {
   config: { type: String, optional: true },
 };
 
-interface Config extends TwipConfig, ToonConfig, CounterConfig {}
+interface Config
+  extends TwipConfig,
+    ToonConfig,
+    StreamlabsConfig,
+    CounterConfig {}
 
 const config: Config = parse<Config>(
   {
     ...TwipConfigOpt,
     ...ToonConfigOpt,
+    ...StreamlabsConfigOpt,
     ...CounterConfigOpt,
   },
   {
@@ -36,4 +46,9 @@ if (config.twipToken.length > 0) {
 if (config.toonAlertBoxKey.length > 0) {
   const toon = await Toon.create(config);
   toon.onDonation(donation);
+}
+
+if (config.streamlabsSocketToken.length > 0) {
+  const streamlabs = await Streamlabs.create(config);
+  streamlabs.onDonation(donation);
 }

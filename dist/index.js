@@ -1,4 +1,5 @@
 import { parse } from 'ts-command-line-args';
+import { Streamlabs, StreamlabsConfigOpt, } from './streamlabs.js';
 import { Toon, ToonConfigOpt } from './toonation.js';
 import { Twip, TwipConfigOpt } from './twip.js';
 const CounterConfigOpt = {
@@ -7,6 +8,7 @@ const CounterConfigOpt = {
 const config = parse({
     ...TwipConfigOpt,
     ...ToonConfigOpt,
+    ...StreamlabsConfigOpt,
     ...CounterConfigOpt,
 }, {
     loadFromFileArg: 'config',
@@ -21,4 +23,8 @@ if (config.twipToken.length > 0) {
 if (config.toonAlertBoxKey.length > 0) {
     const toon = await Toon.create(config);
     toon.onDonation(donation);
+}
+if (config.streamlabsSocketToken.length > 0) {
+    const streamlabs = await Streamlabs.create(config);
+    streamlabs.onDonation(donation);
 }
