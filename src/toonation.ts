@@ -4,7 +4,11 @@ import type WebSocket from 'ws';
 import fetch from 'node-fetch';
 import { initLogger } from './util.js';
 import { WebSocketConnection } from './ws.js';
-import type { DonationMessage } from './model.js';
+import type {
+  DonationCallback,
+  DonationMessage,
+  DonationPublisher,
+} from './model.js';
 
 const logger: Logger = initLogger('toon');
 
@@ -19,7 +23,12 @@ export const ToonConfigOpt: ArgumentConfig<ToonConfig> = {
 // websocket url
 // wss://toon.at:8071/eyJhdXRoIjoiOTE3.....
 
-export class Toon extends WebSocketConnection<DonationMessage> {
+export class Toon
+  extends WebSocketConnection<DonationMessage>
+  implements DonationPublisher
+{
+  private listener: DonationCallback[] = [];
+
   protected ping(): void {
     this.send('#ping');
   }
@@ -34,15 +43,23 @@ export class Toon extends WebSocketConnection<DonationMessage> {
     try {
       const obj = JSON.parse(msg);
       if (obj.content && obj.content.amount) {
-        return {
-          amount: obj.content.amount,
-          currency: 'krw',
-        };
+        this.listener.forEach((l) =>
+          process.nextTick(() =>
+            l({
+              amount: obj.content.amount,
+              currency: 'krw',
+            })
+          )
+        );
       }
     } catch (e) {
       // do nothing
     }
     return null;
+  }
+
+  public onDonation(callback: DonationCallback): void {
+    this.listener.push(callback);
   }
 
   public static async create(config: ToonConfig): Promise<Toon> {

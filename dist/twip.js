@@ -9,6 +9,7 @@ export const TwipConfigOpt = {
 export class Twip extends WebSocketConnection {
     constructor(url) {
         super(url);
+        this.listener = [];
     }
     ping() {
         this.send('2');
@@ -25,13 +26,16 @@ export class Twip extends WebSocketConnection {
         if (id_reg[1] === '42') {
             const obj = JSON.parse(msg.substring(2));
             if (obj[0] === 'new donate') {
-                return {
+                this.listener.forEach((l) => l({
                     amount: obj[1].amount,
                     currency: 'krw',
-                };
+                }));
             }
         }
         return null;
+    }
+    onDonation(callback) {
+        this.listener.push(callback);
     }
     static async create(config) {
         const url = `wss://io.mytwip.net/socket.io/?alertbox_key=${config.twipAlertBoxKey}&version=${config.twipVersion}&token=${encodeURIComponent(config.twipToken)}&transport=websocket`;

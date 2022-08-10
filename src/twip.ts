@@ -3,7 +3,11 @@ import type { ArgumentConfig } from 'ts-command-line-args';
 import type WebSocket from 'ws';
 import { initLogger } from './util.js';
 import { WebSocketConnection } from './ws.js';
-import type { DonationMessage } from './model.js';
+import type {
+  DonationMessage,
+  DonationPublisher,
+  DonationCallback,
+} from './model.js';
 
 const logger: Logger = initLogger('twip');
 
@@ -42,7 +46,12 @@ export const TwipConfigOpt: ArgumentConfig<TwipConfig> = {
 
 type MessageObj = [string, any];
 
-export class Twip extends WebSocketConnection<DonationMessage> {
+export class Twip
+  extends WebSocketConnection<DonationMessage>
+  implements DonationPublisher
+{
+  private listener: DonationCallback[] = [];
+
   private constructor(url: string) {
     super(url);
   }
@@ -63,13 +72,19 @@ export class Twip extends WebSocketConnection<DonationMessage> {
     if (id_reg[1] === '42') {
       const obj = JSON.parse(msg.substring(2)) as MessageObj;
       if (obj[0] === 'new donate') {
-        return {
-          amount: obj[1].amount,
-          currency: 'krw',
-        };
+        this.listener.forEach((l) =>
+          l({
+            amount: obj[1].amount,
+            currency: 'krw',
+          })
+        );
       }
     }
     return null;
+  }
+
+  public onDonation(callback: DonationCallback): void {
+    this.listener.push(callback);
   }
 
   public static async create(config: TwipConfig): Promise<Twip> {

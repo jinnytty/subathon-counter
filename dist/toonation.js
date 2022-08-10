@@ -8,6 +8,10 @@ export const ToonConfigOpt = {
 // websocket url
 // wss://toon.at:8071/eyJhdXRoIjoiOTE3.....
 export class Toon extends WebSocketConnection {
+    constructor() {
+        super(...arguments);
+        this.listener = [];
+    }
     ping() {
         this.send('#ping');
     }
@@ -20,16 +24,19 @@ export class Toon extends WebSocketConnection {
         try {
             const obj = JSON.parse(msg);
             if (obj.content && obj.content.amount) {
-                return {
+                this.listener.forEach((l) => process.nextTick(() => l({
                     amount: obj.content.amount,
                     currency: 'krw',
-                };
+                })));
             }
         }
         catch (e) {
             // do nothing
         }
         return null;
+    }
+    onDonation(callback) {
+        this.listener.push(callback);
     }
     static async create(config) {
         const resp = await fetch(`https://toon.at/widget/alertbox/${config.toonAlertBoxKey}`);

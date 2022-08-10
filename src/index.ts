@@ -1,8 +1,7 @@
 import { ArgumentConfig, parse } from 'ts-command-line-args';
-import type { DonationMessage } from './model.js';
+import type { DonationCallback, DonationMessage } from './model.js';
 import { Toon, ToonConfig, ToonConfigOpt } from './toonation.js';
 import { Twip, TwipConfig, TwipConfigOpt } from './twip.js';
-import type { MessageListener } from './ws.js';
 
 interface CounterConfig {
   config?: string;
@@ -25,20 +24,16 @@ const config: Config = parse<Config>(
   }
 );
 
-class Donation implements MessageListener<DonationMessage> {
-  message(data: DonationMessage): void {
-    console.log('donation:', data.amount, data.currency);
-  }
-}
-
-const donation = new Donation();
+const donation: DonationCallback = (donation: DonationMessage) => {
+  console.log('donation:', donation.amount, donation.currency);
+};
 
 if (config.twipToken.length > 0) {
   const twip = await Twip.create(config);
-  twip.addListener(donation);
+  twip.onDonation(donation);
 }
 
 if (config.toonAlertBoxKey.length > 0) {
   const toon = await Toon.create(config);
-  toon.addListener(donation);
+  toon.onDonation(donation);
 }
