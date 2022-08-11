@@ -4,7 +4,8 @@
     "outDir": "dist",
     "rootDir": "src",
     "noUncheckedIndexedAccess": false,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "noUnusedParameters": false
   },
   "include": ["src/**/*.ts"]
 }
