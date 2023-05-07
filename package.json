@@ -15,6 +15,8 @@
     "@types/tmi.js": "^1.8.1",
     "@types/ws": "^8.5.3",
     "eslint": "~8.10.0",
+    "ts-mixer": "^6.0.3",
+    "typed-emitter": "^2.1.0",
     "typescript": "~4.5.5"
   },
   "dependencies": {
