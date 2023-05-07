@@ -9,11 +9,7 @@ enum Status {
   OPEN,
 }
 
-export interface MessageListener<IMessage> {
-  message: (data: IMessage) => void;
-}
-
-export abstract class WebSocketConnection<IMessage> {
+export abstract class WebSocketConnection {
   private status: Status = Status.CLOSE;
   protected id: string = 'ws';
   protected url: string = '';
@@ -22,8 +18,6 @@ export abstract class WebSocketConnection<IMessage> {
   private pingInt: NodeJS.Timeout | null = null;
   private pingTimeout: NodeJS.Timer | null = null;
   protected pingIntervalLength: number = 1000 * 3;
-
-  private listeners: MessageListener<IMessage>[] = [];
 
   private openResolve: undefined | ((value: void | PromiseLike<void>) => void) =
     undefined;
@@ -48,10 +42,6 @@ export abstract class WebSocketConnection<IMessage> {
         });
       }
     );
-  }
-
-  public addListener(listener: MessageListener<IMessage>): void {
-    this.listeners.push(listener);
   }
 
   public open(): Promise<void> {
@@ -114,9 +104,9 @@ export abstract class WebSocketConnection<IMessage> {
       clearInterval(this.pingTimeout);
       this.pingTimeout = null;
     }
+
     const msg = this.onMessage(data);
     if (msg === null) return;
-    this.listeners.forEach((l) => l.message(msg));
   }
 
   private wsClose(): void {

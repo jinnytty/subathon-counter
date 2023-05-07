@@ -23,10 +23,7 @@ export const ToonConfigOpt: ArgumentConfig<ToonConfig> = {
 // websocket url
 // wss://toon.at:8071/eyJhdXRoIjoiOTE3.....
 
-export class Toon
-  extends WebSocketConnection<DonationMessage>
-  implements DonationPublisher
-{
+export class Toon extends WebSocketConnection implements DonationPublisher {
   private listener: DonationCallback[] = [];
 
   protected ping(): void {

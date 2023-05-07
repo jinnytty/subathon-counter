@@ -46,10 +46,7 @@ export const TwipConfigOpt: ArgumentConfig<TwipConfig> = {
 
 type MessageObj = [string, any];
 
-export class Twip
-  extends WebSocketConnection<DonationMessage>
-  implements DonationPublisher
-{
+export class Twip extends WebSocketConnection implements DonationPublisher {
   private listener: DonationCallback[] = [];
 
   private constructor(url: string) {

@@ -32,7 +32,7 @@ interface DonationEvent {
 }
 
 export class Streamlabs
-  extends WebSocketConnection<DonationMessage>
+  extends WebSocketConnection
   implements DonationPublisher
 {
   private listener: DonationCallback[] = [];
