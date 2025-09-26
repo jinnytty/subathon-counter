@@ -9,6 +9,9 @@ import type {
   SubscriptionCallback,
   SubscriptionMessage,
   SubscriptionPublisher,
+  TimerControlCallback, // <-- ADD
+  TimerControlMessage, // <-- ADD
+  TimerControlPublisher, // <-- ADD
 } from './model.js';
 
 const logger: Logger = initLogger('twitch');
@@ -21,10 +24,14 @@ export const TwitchConfigOpt: ArgumentConfig<TwitchConfig> = {
   twitchChannel: { type: String },
 };
 
-export class Twitch implements DonationPublisher, SubscriptionPublisher {
+export class Twitch
+  implements DonationPublisher, SubscriptionPublisher, TimerControlPublisher
+{
+  // <-- ADD TimerControlPublisher
   private client: tmi.Client;
   private donationListener: DonationCallback[] = [];
   private subListener: SubscriptionCallback[] = [];
+  private timerControlListener: TimerControlCallback[] = []; // <-- ADD
 
   constructor(channel: string) {
     this.client = new tmi.Client({
@@ -34,8 +41,54 @@ export class Twitch implements DonationPublisher, SubscriptionPublisher {
 
   public async connect(): Promise<void> {
     this.client.connect();
-    this.client.on('message', (channel, tags, message) => {
+    this.client.on('message', (channel, tags, message, self) => {
+      // Ignore messages from the bot itself
+      if (self) return;
+
       logger.trace({ channel, tags, message }, 'chat message');
+
+      // Check for permissions (broadcaster or moderator)
+      const isAllowedUser = tags.username === 'happyfluffyteddy';
+      const isModerator = tags.badges?.moderator === '1';
+      const isBroadcaster = tags.badges?.broadcaster === '1';
+      if (!isBroadcaster && !isAllowedUser && !isModerator) {
+        return;
+      }
+
+      // Parse commands
+      const parts = message.trim().split(' ');
+      const command = parts[0].toLowerCase();
+      const value = parts[1];
+
+      let controlMsg: TimerControlMessage | null = null;
+
+      if (
+        (command === '!settime' ||
+          command === '!addtime' ||
+          command === '!subtime') &&
+        value
+      ) {
+        if (command === '!settime') {
+          controlMsg = { command: 'set', value };
+        } else if (command === '!addtime') {
+          controlMsg = { command: 'add', value };
+        } else if (command === '!subtime') {
+          controlMsg = { command: 'sub', value };
+        }
+      } else if (command === '!pausetimer') {
+        controlMsg = { command: 'pause' }; // No value needed
+      } else if (command === '!unpausetimer') {
+        controlMsg = { command: 'unpause' }; // No value needed
+      } else if (command === '!pausesubathon') {
+        controlMsg = { command: 'pausesubathon' }; // No value needed
+      } else if (command === '!unpausesubathon') {
+        controlMsg = { command: 'unpausesubathon' }; // No value needed
+      }
+
+      if (controlMsg) {
+        this.timerControlListener.forEach((l) => l(controlMsg!));
+      }
+      // --- END OF MODIFIED LOGIC ---
     });
 
     this.client.on(
@@ -121,6 +174,10 @@ export class Twitch implements DonationPublisher, SubscriptionPublisher {
 
   public onSubscription(callback: SubscriptionCallback): void {
     this.subListener.push(callback);
+  }
+
+  public onTimerControl(callback: TimerControlCallback): void {
+    this.timerControlListener.push(callback);
   }
 
   public static async create(config: TwitchConfig): Promise<Twitch> {

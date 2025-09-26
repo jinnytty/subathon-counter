@@ -19,3 +19,21 @@ export type SubscriptionCallback = (sub: SubscriptionMessage) => void;
 export interface SubscriptionPublisher {
   onSubscription: (callback: SubscriptionCallback) => void;
 }
+
+export interface TimerControlMessage {
+  command:
+    | 'set'
+    | 'add'
+    | 'sub'
+    | 'pause'
+    | 'unpause'
+    | 'pausesubathon'
+    | 'unpausesubathon';
+  value?: string;
+}
+
+export type TimerControlCallback = (msg: TimerControlMessage) => void;
+
+export interface TimerControlPublisher {
+  onTimerControl: (callback: TimerControlCallback) => void;
+}
