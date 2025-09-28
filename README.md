@@ -1,5 +1,11 @@
 ### Usage
 
+To start the script
+
+`node dist/index.js --twitchChannel= --streamlabsSocketToken=`
+
+---
+
 For manual control through `timer_control.txt`, editing and saving the file will update the timer.
 
 *   **Set an absolute time:** `02:00:00` will set the timer to 2 hours. Must be in `hh:mm:ss` format.
