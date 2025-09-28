@@ -43,6 +43,11 @@ export class Streamlabs
     this.cleanupInterval = setInterval(() => this.cleanupOldEventIds(), 60 * 1000); // Run every minute
   }
 
+  public override close(): void {
+    clearInterval(this.cleanupInterval);
+    super.close();
+  }
+
   private cleanupOldEventIds(): void {
     const now = Date.now();
     const oldKeys: string[] = [];
