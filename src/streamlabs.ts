@@ -26,11 +26,6 @@ interface Event {
   message: any[];
 }
 
-interface DonationEvent {
-  currency: string;
-  amount: number;
-}
-
 export class Streamlabs
   extends WebSocketConnection
   implements DonationPublisher
@@ -58,11 +53,31 @@ export class Streamlabs
       const obj = JSON.parse(msg.substring(2)) as MessageObj;
       if (obj[0] !== 'event') return null;
       const event = obj[1] as Event;
-      if (event.type === 'donation') {
-        event.message.forEach((em: DonationEvent) => {
+
+      // Handle both donation and superchat events
+      if (event.type === 'donation' || event.type === 'superchat') {
+        event.message.forEach((em: any) => {
+          let finalAmount: number;
+
+          if (event.type === 'superchat') {
+            // Superchat amount is in micro-units (e.g., 2000000 for $2.00)
+            finalAmount = parseFloat(em.amount) / 1000000;
+          } else {
+            // Regular donation amount is a standard decimal string
+            finalAmount = parseFloat(em.amount);
+          }
+
+          if (isNaN(finalAmount) || !em.currency) {
+            logger.warn(
+              { eventMessage: em },
+              'Could not parse amount or currency from event message'
+            );
+            return;
+          }
+
           this.listener.forEach((l) =>
             l({
-              amount: em.amount,
+              amount: finalAmount,
               currency: em.currency.toLowerCase(),
             })
           );
