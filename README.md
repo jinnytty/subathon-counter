@@ -1,19 +1,27 @@
-Usage
+### Usage
 
-For manual control through timer_control.txt, editing and saving file will update the timer.
-**Set an absolute time:** `02:00:00` will set the timer to 2 hours. Has to be hh:mm:ss meaning 04h etc.
-**Add time:** `+10m` will add 10 minutes.
-**Subtract time:** `-30s` will subtract 30 seconds.
-Clear control file after issuing command, keep it empty.
+For manual control through `timer_control.txt`, editing and saving the file will update the timer.
 
-Controls through chat or control file
-"!settime 01:30:00" (has to be HH:MM:SS format)
-"!addtime 10m" +10 mins to timer (supports 77mins or 1000s [number+h/m/s without space] etc)
-"!subtime 30s" -30s from timer
-"!pausetimer" pauses timer from going down and allows it to increase from subs/donos
-"!unpausetimer"
-"!pausesubathon" stops adding time to timer
-"!unpausesubathon"
+*   **Set an absolute time:** `02:00:00` will set the timer to 2 hours. Must be in `hh:mm:ss` format.
+*   **Add time:** `+10m` will add 10 minutes.
+*   **Subtract time:** `-30s` will subtract 30 seconds.
 
-Timer cap file time format
-2025-09-28 20:00:00 GMT+8 or 2025-09-28T20:00:00 Etc/GMT-8
+After issuing a command, clear the control file and keep it empty.
+
+---
+
+### Controls via Chat or Control File
+
+*   `!settime 01:30:00` - Sets the timer to a specific time (must be in HH:MM:SS format).
+*   `!addtime 10m` - Adds time to the timer (e.g., `77m` or `1000s`).
+*   `!subtime 30s` - Subtracts time from the timer.
+*   `!pausetimer` - Pauses the countdown but still allows time to be added.
+*   `!unpausetimer` - Resumes the countdown.
+*   `!pausesubathon` - Stops new time from being added to the timer.
+*   `!unpausesubathon` - Resumes allowing new time to be added.
+
+---
+
+### Timer Cap File Format
+
+The timer cap file accepts standard date-time formats, such as `2025-09-28 20:00:00 GMT+8` or `2025-09-28T20:00:00 Etc/GMT-8`.
