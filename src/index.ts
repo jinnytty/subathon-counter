@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { ArgumentConfig, parse } from 'ts-command-line-args';
-import { Duration } from 'luxon';
+                                               
+import { Duration, DateTime } from 'luxon';
 import type {
   DonationCallback,
   DonationMessage,
@@ -27,12 +28,12 @@ function parseDurationString(value: string): Duration {
     .match(/^(\d+)\s*(s|sec|seconds?|m|mins?|minutes?|h|hr|hours?)$/);
 
   if (!match) {
-    // Return an invalid duration if the format is wrong
+                                                        
     return Duration.invalid('invalid format');
   }
 
   const amount = parseInt(match[1], 10);
-  const unit = match[2].charAt(0); // We only need the first letter (s, m, or h) to decide
+  const unit = match[2].charAt(0);
 
   switch (unit) {
     case 's':
@@ -42,7 +43,7 @@ function parseDurationString(value: string): Duration {
     case 'h':
       return Duration.fromObject({ hours: amount });
     default:
-      // This should not be reachable due to the regex, but it's good practice.
+                                                                               
       return Duration.invalid('unknown unit');
   }
 }
@@ -54,6 +55,7 @@ interface CounterConfig {
   startTimer?: string;
   timerFile: string;
   timerControlFile: string;
+  timerCapFile: string;
 }
 
 const CounterConfigOpt: ArgumentConfig<CounterConfig> = {
@@ -63,6 +65,7 @@ const CounterConfigOpt: ArgumentConfig<CounterConfig> = {
   startTimer: { type: String, optional: true },
   timerFile: { type: String, defaultValue: 'timer.txt' },
   timerControlFile: { type: String, defaultValue: 'timer_control.txt' },
+  timerCapFile: { type: String, defaultValue: 'timer_cap.txt' },
 };
 
 interface Config
@@ -100,109 +103,300 @@ let timer = Duration.fromMillis(0);
 let isSubathonPaused = false;
 let isPaused = false;
 
+let timerCap: DateTime | null = null;
+let wasPausedByCap = false;
+
 if (config.startTimer) {
   timer = Duration.fromISOTime(config.startTimer);
 }
 
-// --- START: NEW FILE WATCHER SECTION ---
+function checkAndApplyCap() {
+  if (!timerCap) {
+    return;
+  }
+
+  const now = DateTime.now();
+  const maxAllowedDuration = timerCap.diff(now);
+
+  if (maxAllowedDuration.valueOf() <= 0) {
+    timer = Duration.fromMillis(0);
+    if (!isSubathonPaused) {
+      isSubathonPaused = true;
+      wasPausedByCap = true;
+      console.log('\nSubathon has been PAUSED automatically as new cap is in the past.');
+    }
+    return;
+  }
+
+  if (timer > maxAllowedDuration) {
+    timer = maxAllowedDuration;
+    console.log(`\nTimer adjusted down to meet the new cap: ${timer.toFormat('h:mm:ss')}`);
+    if (!isSubathonPaused) {
+      isSubathonPaused = true;
+      wasPausedByCap = true;
+      console.log('\nSubathon has been PAUSED automatically as timer exceeded new cap.');
+    }
+  } else {
+    if (isSubathonPaused && wasPausedByCap) {
+      isSubathonPaused = false;
+      wasPausedByCap = false;
+      console.log('\nSubathon has been RESUMED as timer is now under the new cap.');
+    }
+  }
+  update().catch(console.error);
+}
+
+function addCappedTime(durationToAdd: Duration): void {
+  if (isSubathonPaused) {
+    console.log('\nSubathon is paused. Ignoring time addition.');
+    return;
+  }
+
+  const newTimerDuration = timer.plus(durationToAdd);
+
+  if (!timerCap) {
+    timer = newTimerDuration;
+    console.log(`\nAdded ${durationToAdd.toFormat('h:mm:ss')}. New timer: ${timer.toFormat('h:mm:ss')}`);
+    return;
+  }
+
+  const now = DateTime.now();
+  const maxAllowedDuration = timerCap.diff(now);
+
+  if (maxAllowedDuration.valueOf() <= 0) {
+    console.log('\nTimer cap has been reached or is in the past. No time added.');
+    if (!isSubathonPaused) {
+      isSubathonPaused = true;
+      wasPausedByCap = true;
+      console.log('\nSubathon has been PAUSED automatically.');
+    }
+    return;
+  }
+
+  if (newTimerDuration > maxAllowedDuration) {
+    const oldTimer = timer;
+    timer = maxAllowedDuration;
+    const timeActuallyAdded = timer.minus(oldTimer);
+
+    console.log(`\nTime addition capped. Added ${timeActuallyAdded.toFormat('h:mm:ss')} to reach the cap. New timer: ${timer.toFormat('h:mm:ss')}`);
+
+    isSubathonPaused = true;
+    wasPausedByCap = true;
+    console.log('\nSubathon has been PAUSED automatically as cap was reached.');
+  } else {
+    timer = newTimerDuration;
+    console.log(`\nAdded ${durationToAdd.toFormat('h:mm:ss')}. New timer: ${timer.toFormat('h:mm:ss')}`);
+  }
+}
+
+                                                                       
+async function updateTimerCap() {
+  try {
+    const content = await fs.promises.readFile(config.timerCapFile, { encoding: 'utf8' });
+    const capString = content.trim();
+
+    if (capString === '') {
+      if (timerCap !== null) {
+        console.log('\nTimer cap has been removed.');
+        if (isSubathonPaused && wasPausedByCap) {
+          isSubathonPaused = false;
+          wasPausedByCap = false;
+          console.log('\nSubathon has been RESUMED as the cap was removed.');
+        }
+      }
+      timerCap = null;
+      return;
+    }
+
+    let newCap: DateTime | null = null;
+
+    // Try parsing the new "YYYY-MM-DD HH:mm:ss GMT+8" format
+    const gmtRegex = /^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})\s*(?:GMT|UTC)([+-])(\d{1,2})$/i;
+    const gmtMatch = capString.match(gmtRegex);
+
+    if (gmtMatch) {
+      const dateTimePart = gmtMatch[1].replace(' ', 'T');
+      const sign = gmtMatch[2];
+      const offset = parseInt(gmtMatch[3], 10);
+      
+      // IANA Etc/GMT zones have inverted signs. GMT+8 is Etc/GMT-8.
+      const invertedSign = sign === '+' ? '-' : '+';
+      const ianaZone = `Etc/GMT${invertedSign}${offset}`;
+      
+      newCap = DateTime.fromISO(dateTimePart, { zone: ianaZone });
+    } else {
+      // Fallback to the original format: "YYYY-MM-DDTHH:mm:ss Zone/Identifier"
+      const parts = capString.split(/\s+/);
+      const dateTimeString = parts[0];
+      const zoneString = parts[1];
+
+      const opts: { zone?: string } = {};
+      if (zoneString) {
+        opts.zone = zoneString;
+      }
+      newCap = DateTime.fromISO(dateTimeString, opts);
+    }
+    
+    if (newCap && newCap.isValid) {
+      timerCap = newCap;
+      console.log(`\nTimer cap set to: ${timerCap.toLocaleString(DateTime.DATETIME_FULL)} (Zone: ${timerCap.zoneName})`);
+      checkAndApplyCap();
+    } else {
+      console.error(`\nInvalid date format in ${config.timerCapFile}. Use 'YYYY-MM-DD HH:mm:ss GMT+8' or 'YYYY-MM-DDTHH:mm:ss Zone/Identifier'. Found: "${capString}"`);
+      timerCap = null;
+    }
+  } catch (err: any) {
+    if (err.code === 'ENOENT') {
+      console.log(`\nCap file ${config.timerCapFile} not found. Creating an empty one. No cap is active.`);
+      try {
+        await fs.promises.writeFile(config.timerCapFile, '', { encoding: 'utf8' });
+      } catch (writeErr) {
+        console.error(`\nFailed to create cap file ${config.timerCapFile}:`, writeErr);
+      }
+      timerCap = null;
+    } else {
+      console.error(`\nError reading or parsing ${config.timerCapFile}:`, err);
+    }
+  }
+}
+                               
+
+
+// First, run updateTimerCap() to ensure the file exists.
+await updateTimerCap();
+
+// Now that the file is guaranteed to exist, we can watch it.
+console.log(`\nWatching for timer cap changes in: ${config.timerCapFile}`);
+fs.watch(config.timerCapFile, async (eventType, filename) => {
+  if (eventType === 'change' || eventType === 'rename') {
+    console.log(`\nDetected change in ${config.timerCapFile}. Attempting to update cap.`);
+    await updateTimerCap();
+  }
+});
+
+// Ensure timer_control.txt exists before watching it
+try {
+  await fs.promises.access(config.timerControlFile);
+} catch (error: any) {
+  if (error.code === 'ENOENT') {
+    console.log(`\nControl file ${config.timerControlFile} not found. Creating an empty one.`);
+    try {
+      await fs.promises.writeFile(config.timerControlFile, '', { encoding: 'utf8' });
+    } catch (writeErr) {
+      console.error(`\nFailed to create control file ${config.timerControlFile}:`, writeErr);
+    }
+  } else {
+    console.error(`\nError checking for ${config.timerControlFile}:`, error);
+  }
+}
+
 console.log(`\nWatching for timer changes in: ${config.timerControlFile}`);
 fs.watch(config.timerControlFile, async (eventType, filename) => {
   if (eventType === 'change') {
-    console.log(
-      `\nDetected change in ${config.timerControlFile}. Attempting to update timer.`
-    );
+    console.log(`\nDetected change in ${config.timerControlFile}. Attempting to update timer.`);
     try {
-      const content = await fs.promises.readFile(config.timerControlFile, {
-        encoding: 'utf8',
-      });
-      const newTime = content.trim();
+      const content = await fs.promises.readFile(config.timerControlFile, { encoding: 'utf8' });
+      const command = content.trim().toLowerCase();
 
-      // We support two command formats:
-      // 1. Absolute time: "01:30:00" -> sets the timer to 1 hour 30 mins
-      // 2. Relative time: "+10m", "-30s" -> adds 10 mins or subtracts 30 secs
-
-      if (newTime.startsWith('+') || newTime.startsWith('-')) {
-        if (newTime.startsWith('+') && isSubathonPaused) {
-          console.log(
-            '\nSubathon is paused. Ignoring time addition from control file.'
-          );
-          return; // <-- Exit if subathon is paused and time is being added
-        }
-        const amount = newTime.substring(1); // e.g., "10m"
-        const durationChange = parseDurationString(amount); // <-- USE THE NEW FUNCTION
-
-        if (!durationChange.isValid) {
-          // <-- ADD VALIDITY CHECK
-          console.error(
-            `\nInvalid duration format in control file: "${newTime}"`
-          );
-          return; // Exit if the format is bad
-        }
-
-        if (newTime.startsWith('+')) {
-          timer = timer.plus(durationChange);
-          console.log(
-            `\nAdded ${durationChange.toFormat('h:mm:ss')} to timer.`
-          );
-        } else {
-          timer = timer.minus(durationChange);
-          console.log(
-            `\nSubtracted ${durationChange.toFormat('h:mm:ss')} from timer.`
-          );
-        }
-      } else {
-        // Assume absolute time like HH:mm:ss
-        const newDuration = Duration.fromISOTime(newTime);
-        if (newDuration.isValid) {
-          timer = newDuration;
-          console.log(`\nTimer manually set to: ${timer.toFormat('h:mm:ss')}`);
-        } else {
-          throw new Error(`Invalid time format: "${newTime}"`);
-        }
+      // If the file is empty, it was just cleared or is in a default state. Do nothing.
+      if (command === '') {
+        return;
       }
 
-      // Immediately update the output file
-      update().catch(console.error);
+      let commandIsValid = true;
+
+      switch (command) {
+        case 'pausetimer':
+          isPaused = true;
+          console.log('\nTimer has been PAUSED via control file.');
+          break;
+        case 'unpausetimer':
+          isPaused = false;
+          last = new Date().getTime();
+          console.log('\nTimer has been RESUMED via control file.');
+          break;
+        case 'pausesubathon':
+          isSubathonPaused = true;
+          wasPausedByCap = false; // Manual pause is not a cap-pause
+          console.log('\nSubathon has been PAUSED via control file. No new time will be added.');
+          break;
+        case 'unpausesubathon':
+          if (wasPausedByCap) {
+            console.log('\nSubathon was paused by the cap. Clearing the cap and resuming via control file.');
+            timerCap = null;
+            isSubathonPaused = false;
+            wasPausedByCap = false;
+
+            // Clear the cap file to make the change persistent.
+            fs.promises.writeFile(config.timerCapFile, '', { encoding: 'utf8' })
+              .then(() => console.log(`\nCap file has been cleared: ${config.timerCapFile}`))
+              .catch((err) => console.error(`\nError clearing the cap file:`, err));
+          } else {
+            isSubathonPaused = false;
+            wasPausedByCap = false;
+            console.log('\nSubathon has been RESUMED via control file. Time can now be added again.');
+          }
+          break;
+        default:
+          if (command.startsWith('+') || command.startsWith('-')) {
+            const amount = command.substring(1);
+            const durationChange = parseDurationString(amount);
+            if (!durationChange.isValid) {
+              console.error(`\nInvalid duration format in control file: "${command}" use 02:34:12 or +10min, -5s etc`);
+              commandIsValid = false;
+            } else if (command.startsWith('+')) {
+              addCappedTime(durationChange);
+            } else {
+              timer = timer.minus(durationChange);
+              console.log(`\nSubtracted ${durationChange.toFormat('h:mm:ss')} from timer.`);
+            }
+          } else {
+            const newDuration = Duration.fromISOTime(command);
+            if (newDuration.isValid) {
+              timer = newDuration;
+              console.log(`\nTimer manually set to: ${timer.toFormat('h:mm:ss')}`);
+              checkAndApplyCap();
+            } else {
+              console.error(`\nInvalid command or time format in control file: "${command}" use 02:34:12 or +10min, -5s etc`);
+              commandIsValid = false;
+            }
+          }
+          break;
+      }
+
+      // If the command was valid, update the timer and clear the control file.
+      if (commandIsValid) {
+        update().catch(console.error);
+        await fs.promises.writeFile(config.timerControlFile, '', { encoding: 'utf8' });
+        console.log(`\nProcessed and cleared ${config.timerControlFile}.`);
+      }
     } catch (err) {
-      console.error(
-        `\nError reading or parsing ${config.timerControlFile}:`,
-        err
-      );
+      console.error(`\nError reading or parsing ${config.timerControlFile}:`, err);
     }
   }
 });
-// --- END: NEW FILE WATCHER SECTION ---
 
-// MODIFIED SECTION 1: Adjusted setInterval to handle async update()
 setInterval(() => {
   const time = new Date().getTime();
   const diff = time - last;
   last = time;
   if (!isPaused) {
     timer = timer.minus(Duration.fromMillis(diff));
-  } // Call update and catch any potential errors from the async operation
+  }
   update().catch(console.error);
 }, 250);
 
-// MODIFIED SECTION 2: Changed update() to write to a file
 async function update() {
   if (timer.valueOf() < 0) {
     timer = Duration.fromMillis(0);
   }
-  const output = timer
-    .shiftTo('hours', 'minutes', 'seconds')
-    .toFormat('h:mm:ss');
+  const output = timer.shiftTo('hours', 'minutes', 'seconds').toFormat('h:mm:ss');
   if (output !== lastOutput) {
     lastOutput = output;
     try {
-      // Write the formatted time to the file specified in the config
-      await fs.promises.writeFile(config.timerFile, output, {
-        encoding: 'utf8',
-      });
-      process.stdout.write(
-        `Timer: ${output} (written to ${config.timerFile})\r`
-      );
-    } catch (err) {
+      await fs.promises.writeFile(config.timerFile, output, { encoding: 'utf8' });
+      process.stdout.write(`Timer: ${output} (written to ${config.timerFile})\r`);
+     } catch (err) {
       console.error('\nError writing timer file:', err);
     }
   }
@@ -223,26 +417,17 @@ function updateTime(
   key: string,
   amount: number
 ): void {
-  // Check if the subathon is paused before adding any time
-  if (isSubathonPaused) {
-    console.log('\nSubathon is paused. Ignoring time addition from event.');
-    return;
-  }
   key = key.toLowerCase();
   if (rates[key]) {
-    timer = timer.plus(
-      Duration.fromObject({
-        seconds: amount * rates[key],
-      })
-    );
-    // MODIFIED SECTION 3: Adjusted this call to handle async update()
+    const durationToAdd = Duration.fromObject({
+      seconds: amount * rates[key],
+    });
+    addCappedTime(durationToAdd);
     update().catch(console.error);
   } else {
     console.log('\nkey not found!!!!', key, rates);
   }
 }
-
-// --- The rest of the file is unchanged ---
 
 if (config.twipToken.length > 0) {
   const twip = await Twip.create(config);
@@ -268,24 +453,21 @@ const twitch = await Twitch.create(config);
 twitch.onDonation(donation);
 twitch.onSubscription(subscription);
 
-// --- START: NEW SECTION FOR TWITCH COMMANDS ---
 twitch.onTimerControl((msg) => {
   console.log('\nReceived timer command from Twitch:', msg);
   try {
     let durationChange: Duration;
     switch (msg.command) {
       case 'set':
-        // Add a check to ensure msg.value exists
         if (!msg.value) {
           console.error('\nError: !settime command requires a value.');
-          break; // Exit this case
+          break;
         }
-        const newDuration = Duration.fromISOTime(msg.value); // This is now safe
+        const newDuration = Duration.fromISOTime(msg.value);
         if (newDuration.isValid) {
           timer = newDuration;
-          console.log(
-            `\nTimer set via Twitch to: ${timer.toFormat('h:mm:ss')}`
-          );
+          console.log(`\nTimer set via Twitch to: ${timer.toFormat('h:mm:ss')}`);
+          checkAndApplyCap();
         } else {
           throw new Error(`Invalid time format for !settime: "${msg.value}"`);
         }
@@ -296,21 +478,12 @@ twitch.onTimerControl((msg) => {
           console.error('\nError: !addtime command requires a value.');
           break;
         }
-        durationChange = parseDurationString(msg.value); // <-- USE THE NEW FUNCTION
+        durationChange = parseDurationString(msg.value);
         if (!durationChange.isValid) {
-          // <-- ADD VALIDITY CHECK
           console.error(`\nInvalid time format for !addtime: "${msg.value}"`);
           break;
         }
-        //  Check if subathon is paused before adding time
-        if (isSubathonPaused) {
-          console.log('\nSubathon is paused. Ignoring !addtime command.');
-          break;
-        }
-        timer = timer.plus(durationChange);
-        console.log(
-          `\nAdded ${durationChange.toFormat('h:mm:ss')} to timer via Twitch.`
-        );
+        addCappedTime(durationChange);
         break;
 
       case 'sub':
@@ -318,47 +491,60 @@ twitch.onTimerControl((msg) => {
           console.error('\nError: !subtime command requires a value.');
           break;
         }
-        durationChange = parseDurationString(msg.value); // <-- USE THE NEW FUNCTION
+        durationChange = parseDurationString(msg.value);
         if (!durationChange.isValid) {
-          // <-- ADD VALIDITY CHECK
           console.error(`\nInvalid time format for !subtime: "${msg.value}"`);
           break;
         }
         timer = timer.minus(durationChange);
-        console.log(
-          `\nSubtracted ${durationChange.toFormat(
-            'h:mm:ss'
-          )} from timer via Twitch.`
-        );
+        console.log(`\nSubtracted ${durationChange.toFormat('h:mm:ss')} from timer via Twitch.`);
         break;
 
       case 'pause':
         isPaused = true;
         console.log('\nTimer has been PAUSED.');
         break;
-
+      
       case 'unpause':
         isPaused = false;
-        last = new Date().getTime();
+        last = new Date().getTime(); 
         console.log('\nTimer has been RESUMED.');
         break;
 
-      // Handle the new subathon pause/unpause commands
       case 'pausesubathon':
         isSubathonPaused = true;
+        wasPausedByCap = false;
         console.log('\nSubathon has been PAUSED. No new time will be added.');
         break;
+      
+      // --- MODIFIED SECTION START: 'unpausesubathon' now has cap-clearing logic ---
       case 'unpausesubathon':
-        isSubathonPaused = false;
-        console.log(
-          '\nSubathon has been RESUMED. Time can now be added again.'
-        );
+        // Check if the subathon was paused automatically by reaching the cap.
+        if (wasPausedByCap) {
+          console.log('\nSubathon was paused by the cap. Clearing the cap and resuming.');
+          timerCap = null; // Clear the cap internally.
+          isSubathonPaused = false;
+          wasPausedByCap = false;
+
+          // Asynchronously clear the cap file to make the change persistent.
+          fs.promises.writeFile(config.timerCapFile, '', { encoding: 'utf8' })
+            .then(() => {
+              console.log(`\nCap file has been cleared: ${config.timerCapFile}`);
+            })
+            .catch((err) => {
+              console.error(`\nError clearing the cap file:`, err);
+            });
+        } else {
+          // If it was a manual pause or not paused, just resume without touching the cap.
+          isSubathonPaused = false;
+          wasPausedByCap = false; // Ensure this is reset regardless.
+          console.log('\nSubathon has been RESUMED. Time can now be added again. Cap (if any) remains active.');
+        }
         break;
+      // --- MODIFIED SECTION END ---
     }
-    // Immediately update the output file
     update().catch(console.error);
   } catch (err) {
     console.error(`\nError processing Twitch command:`, err);
   }
 });
-// --- END: NEW SECTION FOR TWITCH COMMANDS ---
