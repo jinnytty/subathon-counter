@@ -131,7 +131,7 @@ function checkAndApplyCap() {
 
   if (timer > maxAllowedDuration) {
     timer = maxAllowedDuration;
-    console.log(`\nTimer adjusted down to meet the new cap: ${timer.toFormat('h:mm:ss')}`);
+    console.log(`\nTimer adjusted down to meet the new cap: ${timer.shiftTo('hours', 'minutes', 'seconds').toFormat('h:mm:ss')}`);
     if (!isSubathonPaused) {
       isSubathonPaused = true;
       wasPausedByCap = true;
@@ -157,7 +157,7 @@ function addCappedTime(durationToAdd: Duration): void {
 
   if (!timerCap) {
     timer = newTimerDuration;
-    console.log(`\nAdded ${durationToAdd.toFormat('h:mm:ss')}. New timer: ${timer.toFormat('h:mm:ss')}`);
+    console.log(`\nAdded ${durationToAdd.toFormat('h:mm:ss')}. New timer: ${timer.shiftTo('hours', 'minutes', 'seconds').toFormat('h:mm:ss')}`);
     return;
   }
 
@@ -179,14 +179,14 @@ function addCappedTime(durationToAdd: Duration): void {
     timer = maxAllowedDuration;
     const timeActuallyAdded = timer.minus(oldTimer);
 
-    console.log(`\nTime addition capped. Added ${timeActuallyAdded.toFormat('h:mm:ss')} to reach the cap. New timer: ${timer.toFormat('h:mm:ss')}`);
+    console.log(`\nTime addition capped. Added ${timeActuallyAdded.toFormat('h:mm:ss')} to reach the cap. New timer: ${timer.shiftTo('hours', 'minutes', 'seconds').toFormat('h:mm:ss')}`);
 
     isSubathonPaused = true;
     wasPausedByCap = true;
     console.log('\nSubathon has been PAUSED automatically as cap was reached.');
   } else {
     timer = newTimerDuration;
-    console.log(`\nAdded ${durationToAdd.toFormat('h:mm:ss')}. New timer: ${timer.toFormat('h:mm:ss')}`);
+    console.log(`\nAdded ${durationToAdd.toFormat('h:mm:ss')}. New timer: ${timer.shiftTo('hours', 'minutes', 'seconds').toFormat('h:mm:ss')}`);
   }
 }
 
@@ -355,7 +355,7 @@ fs.watch(config.timerControlFile, async (eventType, filename) => {
             const newDuration = Duration.fromISOTime(command);
             if (newDuration.isValid) {
               timer = newDuration;
-              console.log(`\nTimer manually set to: ${timer.toFormat('h:mm:ss')}`);
+              console.log(`\nTimer manually set to: ${timer.shiftTo('hours', 'minutes', 'seconds').toFormat('h:mm:ss')}`);
               checkAndApplyCap();
             } else {
               console.error(`\nInvalid command or time format in control file: "${command}" use 02:34:12 or +10min, -5s etc`);
@@ -515,7 +515,7 @@ twitch.onTimerControl((msg) => {
         const newDuration = Duration.fromISOTime(msg.value);
         if (newDuration.isValid) {
           timer = newDuration;
-          console.log(`\nTimer set via Twitch to: ${timer.toFormat('h:mm:ss')}`);
+          console.log(`\nTimer set via Twitch to: ${timer.shiftTo('hours', 'minutes', 'seconds').toFormat('h:mm:ss')}`);
           checkAndApplyCap();
         } else {
           throw new Error(`Invalid time format for !settime: "${msg.value}"`);
