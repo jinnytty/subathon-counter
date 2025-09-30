@@ -99,12 +99,13 @@ const subRate = JSON.parse(
 
 let last = new Date().getTime();
 let lastOutput = '';
-let timer = Duration.fromMillis(0);
+let timer = Duration.fromObject({ hours: 8 }); // <-- MODIFIED: Start with 8 hours by default
 let isSubathonPaused = false;
 let isPaused = false;
 
 let timerCap: DateTime | null = null;
 let wasPausedByCap = false;
+let zeroGracePeriodEndTimestamp: number | null = null;
 
 if (config.startTimer) {
   timer = Duration.fromISOTime(config.startTimer);
@@ -380,9 +381,57 @@ setInterval(() => {
   const time = new Date().getTime();
   const diff = time - last;
   last = time;
+
+  // 1. Handle timer countdown
   if (!isPaused) {
     timer = timer.minus(Duration.fromMillis(diff));
+  } else {
+    // 2. Handle cap check when timer is paused
+    if (timerCap) {
+      const now = DateTime.now();
+      const maxAllowedDuration = timerCap.diff(now);
+
+      if (timer > maxAllowedDuration) {
+        console.log('\nPaused timer has reached the cap. Forcing resume and adjusting timer.');
+        timer = maxAllowedDuration;
+        isPaused = false;
+
+        if (!isSubathonPaused) {
+          isSubathonPaused = true;
+          wasPausedByCap = true;
+          console.log('\nSubathon has been PAUSED automatically as cap was reached while timer was paused.');
+        }
+      }
+    }
   }
+
+  // 3. Handle zero-timer grace period and auto-pause
+  if (timer.valueOf() > 0) {
+    // Timer is positive, so cancel any pending grace period.
+    if (zeroGracePeriodEndTimestamp !== null) {
+      console.log('\nTimer increased above zero. Cancelling subathon auto-pause.');
+      zeroGracePeriodEndTimestamp = null;
+    }
+  } else {
+    // Timer is at or below zero.
+    // Start the grace period if it hasn't been started yet and the subathon is not already paused.
+    if (zeroGracePeriodEndTimestamp === null && !isSubathonPaused) {
+      console.log('\nTimer reached zero. Starting 2-second grace period before pausing subathon...');
+      zeroGracePeriodEndTimestamp = Date.now() + 2000;
+    }
+    // Check if the grace period is active and has expired.
+    else if (zeroGracePeriodEndTimestamp !== null && Date.now() >= zeroGracePeriodEndTimestamp) {
+      // If the grace period expires and the subathon is still running, pause it.
+      if (!isSubathonPaused) {
+        console.log('\nGrace period expired with timer at zero. Pausing subathon.');
+        isSubathonPaused = true;
+        wasPausedByCap = false; // This is a zero-timer pause, not a cap pause.
+      }
+      // Reset the timestamp to prevent this from re-triggering.
+      zeroGracePeriodEndTimestamp = null;
+    }
+  }
+
   update().catch(console.error);
 }, 250);
 
